@@ -249,6 +249,17 @@ jobs:
           flavor: ${{ inputs.root_flavor }}
           commit: ${{ inputs.root_commit }}
 
+      - name: Patch BakaSU SELinux backup policy
+        if: inputs.root_flavor == 'bakasu'
+        shell: bash
+        working-directory: ${{ github.workspace }}/kernel/BakaSU
+        run: |
+          set -e
+          PATCH="${GITHUB_WORKSPACE}/.github/patches/adbroot.patch"
+          git apply --check "$PATCH"
+          git apply "$PATCH"
+          echo "BakaSU SELinux patch applied"
+
       - name: Mark No Root build metadata
         if: inputs.root_flavor == 'none'
         shell: bash
