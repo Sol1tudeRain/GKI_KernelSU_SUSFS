@@ -1,0 +1,18 @@
+
+diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
+--- a/kernel/selinux/rules.c
++++ b/kernel/selinux/rules.c
+@@ -157,6 +157,13 @@ void apply_kernelsu_rules()
+                 ksu_destroy_sepolicy(backup_sepolicy);
+                 backup_sepolicy = NULL;
+             } else {
++                /* Experimental: remove only this permission from the
++                 * policy snapshot used by the SELinux Hide query hook.
++                 * This does NOT change the live enforcement policy.
++                 */
++                if (!ksu_deny(&backup_sepolicy->policydb, "adbd", "adbroot", "binder", "call")) {
++                    pr_warn("could not deny adbd->adbroot binder call in SELinux Hide backup\n");
++                }
+                 pr_info("backup sepolicy success! latest_granting=%d\n", backup_sepolicy->latest_granting);
+             }
+         }
