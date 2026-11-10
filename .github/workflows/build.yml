@@ -303,16 +303,29 @@ jobs:
             CONFIG_KSU_SUSFS_OPEN_REDIRECT=n
             CONFIG_KSU_SUSFS_SUS_MAP=n
 
-      - name: Patch BakaSU adbroot context
+      
+      - name: Debug BakaSU source
         if: inputs.root_flavor == 'bakasu'
         shell: bash
         working-directory: ${{ github.workspace }}/kernel/BakaSU
         run: |
-          set -e
-          PATCH="${GITHUB_WORKSPACE}/.github/patches/bakasu-adbroot-context-experimental.patch"
-          git apply --check "$PATCH"
-          git apply "$PATCH"
-          echo "adbroot context patch applied"
+          echo "===== BakaSU COMMIT ====="
+          git rev-parse HEAD
+
+          echo "===== SELINUX_HIDE.C 215-250 ====="
+          nl -ba kernel/feature/selinux_hide.c | sed -n '215,250p'
+
+          echo "===== SELINUX_HIDE.C 300-325 ====="
+          nl -ba kernel/feature/selinux_hide.c | sed -n '300,325p'
+
+          echo "===== SELINUX_HIDE.C 430-455 ====="
+          nl -ba kernel/feature/selinux_hide.c | sed -n '430,455p'
+
+          echo "===== PATCH FILE ====="
+          sed -n '1,80p' "${GITHUB_WORKSPACE}/.github/patches/bakasu-adbroot-context-experimental.patch"
+
+          exit 1
+
 
       - name: SUSFS
         # One step, one action: resolve the SUSFS commit, apply it for the
