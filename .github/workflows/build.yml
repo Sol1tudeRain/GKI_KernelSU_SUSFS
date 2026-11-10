@@ -303,6 +303,17 @@ jobs:
             CONFIG_KSU_SUSFS_OPEN_REDIRECT=n
             CONFIG_KSU_SUSFS_SUS_MAP=n
 
+      - name: Patch BakaSU adbroot context
+        if: inputs.root_flavor == 'bakasu'
+        shell: bash
+        working-directory: ${{ github.workspace }}/kernel/BakaSU
+        run: |
+          set -e
+          PATCH="${GITHUB_WORKSPACE}/.github/patches/bakasu-adbroot-context-experimental.patch"
+          git apply --check "$PATCH"
+          git apply "$PATCH"
+          echo "adbroot context patch applied"
+
       - name: SUSFS
         # One step, one action: resolve the SUSFS commit, apply it for the
         # selected root, then run the post-patch fixes (ksu_close_fd restore,
@@ -320,16 +331,6 @@ jobs:
           sublevel: ${{ steps.extract.outputs.sublevel }}
           root_flavor: ${{ inputs.root_flavor }}
 
-      - name: Patch BakaSU adbroot context
-        if: inputs.root_flavor == 'bakasu'
-        shell: bash
-        working-directory: ${{ github.workspace }}/kernel/BakaSU
-        run: |
-          set -e
-          PATCH="${GITHUB_WORKSPACE}/.github/patches/bakasu-adbroot-context-experimental.patch"
-          git apply --check "$PATCH"
-          git apply "$PATCH"
-          echo "adbroot context patch applied"
 
       - name: Baseband Guard
         if: (contains(inputs.feature_set, 'BBG') || inputs.feature_set == 'All')
