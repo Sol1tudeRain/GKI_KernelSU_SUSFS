@@ -303,6 +303,7 @@ jobs:
             CONFIG_KSU_SUSFS_OPEN_REDIRECT=n
             CONFIG_KSU_SUSFS_SUS_MAP=n
 
+      
       - name: Patch BakaSU adbroot context
         if: inputs.root_flavor == 'bakasu'
         shell: bash
@@ -312,6 +313,7 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/.github/scripts/patch_bakasu_adbroot_context.py"
           git diff --check
           git diff -- kernel/feature/selinux_hide.c
+
 
 
       - name: SUSFS
