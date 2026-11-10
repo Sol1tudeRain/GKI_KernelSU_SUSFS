@@ -1,72 +1,81 @@
 #!/usr/bin/env python3
-"""Experimental BakaSU d5e9e025 context-query test patch.
+"""Experimental BakaSU d5e9e025 adbroot query-response patch.
 
-Edits SELinux Hide query responses for a single SELinux context and ordinary
-Android app UIDs. Does not change live SELinux policy or remove the type.
-Fails closed if the expected source anchors have changed.
+Applies three narrowly scoped changes to kernel/feature/selinux_hide.c.
+No file is written unless all three unique source anchors match.
+This alters visibility of an SELinux context to apps, not SELinux policy.
+Not a verified security fix or a device-tested kernel patch.
 """
 from pathlib import Path
 
-path = Path('kernel/feature/selinux_hide.c')
-src = path.read_text(encoding='utf-8')
+TARGET = Path('kernel/feature/selinux_hide.c')
+original = TARGET.read_text(encoding='utf-8')
+if 'Experimental: return invalid only for a specific app context probe.' in original:
+    raise SystemExit('ERROR patch already applied; no file changed')
+source = original
 
 
-def replace_once(label: str, anchor: str, replacement: str) -> None:
-    global src
-    count = src.count(anchor)
-    if count != 1:
-        raise SystemExit(f'ERROR {label}: expected 1 source anchor, found {count}. No file changed.')
-    src = src.replace(anchor, replacement, 1)
+def patch_range(label, start_marker, end_marker, anchor, insert):
+    global source
+    start = source.find(start_marker)
+    end = source.find(end_marker, start + len(start_marker))
+    if start < 0 or end < 0:
+        raise SystemExit(f'ERROR {label}: function boundary not found; no file changed')
+    section = source[start:end]
+    n = section.count(anchor)
+    if n != 1:
+        raise SystemExit(f'ERROR {label}: expected 1 anchor in function, found {n}; no file changed')
+    source = source[:start] + section.replace(anchor, insert + anchor, 1) + source[end:]
     print(f'OK {label}')
 
 
-context_anchor = '''    if (length)
-        goto out;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
-    length = security_context_to_sid_with_policy(backup_sepolicy, buf, size'''
-context_change = '''    if (length)
-        goto out;
-    /* Experimental: app-facing adbroot context query only. */
+# Check context validity through /sys/fs/selinux/context. Insert immediately
+# before the backup-policy resolution, after the normal access-control check.
+patch_range(
+    'context query',
+    '__maybe_static ssize_t my_write_context(',
+    '__maybe_static ssize_t my_write_access(',
+    '#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)\n',
+    '''    /* Experimental: return invalid only for a specific app context probe. */
     if (ksu_get_uid_t(current_uid()) >= 10000 &&
         size == sizeof("u:r:adbroot:s0") - 1 &&
         !memcmp(buf, "u:r:adbroot:s0", sizeof("u:r:adbroot:s0") - 1)) {
         length = -EINVAL;
         goto out;
     }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
-    length = security_context_to_sid_with_policy(backup_sepolicy, buf, size'''
-replace_once('context query', context_anchor, context_change)
+''',
+)
 
-access_anchor = '''    sconlen = strlen(scon);
-    tconlen = strlen(tcon);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)'''
-access_change = '''    sconlen = strlen(scon);
-    tconlen = strlen(tcon);
-    /* Experimental: class=0 probe only; preserve normal access decisions. */
+# /sys/fs/selinux/access: after the input has been parsed and lengths set.
+patch_range(
+    'access class-zero query',
+    '__maybe_static ssize_t my_write_access(',
+    'static inline u32 cred_sid(',
+    '    tconlen = strlen(tcon);\n',
+    '''    /* Experimental: only a class-zero context probe; preserve binder. */
     if (ksu_get_uid_t(current_uid()) >= 10000 && tclass == 0 &&
         (!strcmp(scon, "u:r:adbroot:s0") || !strcmp(tcon, "u:r:adbroot:s0"))) {
         length = -EINVAL;
         goto out;
     }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)'''
-replace_once('class-zero access query', access_anchor, access_change)
+''',
+)
 
-attr_anchor = '''    error = ksu_avc_has_perm_compat(mysid, mysid, SECCLASS_PROCESS, PROCESS__SETCURRENT, NULL);
-    if (error)
-        return error;
-    /* Obtain a SID for the context, if one was specified. */'''
-attr_change = '''    error = ksu_avc_has_perm_compat(mysid, mysid, SECCLASS_PROCESS, PROCESS__SETCURRENT, NULL);
-    if (error)
-        return error;
-    /* Experimental: preserve original SELinux policy and other contexts. */
+# /proc/self/attr/current setprocattr test; keep the live policy unchanged.
+comment = '    /* Obtain a SID for the context, if one was specified. */\n'
+if source.count(comment) != 1 or source.find(comment) < source.find('int __nocfi ksu_handle_selinux_setprocattr('):
+    raise SystemExit('ERROR setprocattr query: unique source anchor not found; no file changed')
+source = source.replace(comment, '''    /* Experimental: app-only context probe, including trailing newline. */
     if (ksu_get_uid_t(current_uid()) >= 10000 && name && value &&
         !strcmp(name, "current") &&
         (size == sizeof("u:r:adbroot:s0") - 1 ||
          (size == sizeof("u:r:adbroot:s0") && ((char *)value)[size - 1] == '\\n')) &&
         !memcmp(value, "u:r:adbroot:s0", sizeof("u:r:adbroot:s0") - 1))
         return -EINVAL;
-    /* Obtain a SID for the context, if one was specified. */'''
-replace_once('setprocattr query', attr_anchor, attr_change)
+''' + comment, 1)
+print('OK setprocattr query')
 
-path.write_text(src, encoding='utf-8')
-print('SUCCESS: source updated; run git diff --check and full compile before any device use')
+if source == original:
+    raise SystemExit('ERROR no changes made; no file changed')
+TARGET.write_text(source, encoding='utf-8')
+print('SUCCESS: all three source edits applied; review diff and compile before use')
