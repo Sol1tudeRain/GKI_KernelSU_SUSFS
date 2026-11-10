@@ -1,0 +1,39 @@
+diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
+--- a/kernel/feature/selinux_hide.c
++++ b/kernel/feature/selinux_hide.c
+@@ -231,4 +231,13 @@
+         ksu_avc_has_perm_compat(current_sid(), SECINITSID_SECURITY, SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
+     if (length)
+         goto out;
++    /* Keep app-facing SELinux context checks consistent with other missing domains.
++     * This only affects queries from app UIDs; it does not remove the real type.
++     */
++    if (ksu_get_uid_t(current_uid()) >= 10000 &&
++        size == sizeof("u:r:adbroot:s0") - 1 &&
++        !memcmp(buf, "u:r:adbroot:s0", sizeof("u:r:adbroot:s0") - 1)) {
++        length = -EINVAL;
++        goto out;
++    }
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
+@@ -310,3 +319,9 @@
+     sconlen = strlen(scon);
+     tconlen = strlen(tcon);
++    if (ksu_get_uid_t(current_uid()) >= 10000 &&
++        (!strcmp(scon, "u:r:adbroot:s0") ||
++         !strcmp(tcon, "u:r:adbroot:s0"))) {
++        length = -EINVAL;
++        goto out;
++    }
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
+@@ -441,4 +456,11 @@
+     error = ksu_avc_has_perm_compat(mysid, mysid, SECCLASS_PROCESS, PROCESS__SETCURRENT, NULL);
+     if (error)
+         return error;
++    if (ksu_get_uid_t(current_uid()) >= 10000 &&
++        name && !strcmp(name, "current") && value &&
++        (size == sizeof("u:r:adbroot:s0") - 1 ||
++         (size == sizeof("u:r:adbroot:s0") &&
++          ((const char *)value)[size - 1] == '\n')) &&
++        !memcmp(value, "u:r:adbroot:s0", sizeof("u:r:adbroot:s0") - 1))
++        return -EINVAL;
+     /* Obtain a SID for the context, if one was specified. */
