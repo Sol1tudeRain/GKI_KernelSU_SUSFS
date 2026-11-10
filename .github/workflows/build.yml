@@ -303,28 +303,15 @@ jobs:
             CONFIG_KSU_SUSFS_OPEN_REDIRECT=n
             CONFIG_KSU_SUSFS_SUS_MAP=n
 
-      
-      - name: Debug BakaSU source
+      - name: Patch BakaSU adbroot context
         if: inputs.root_flavor == 'bakasu'
         shell: bash
         working-directory: ${{ github.workspace }}/kernel/BakaSU
         run: |
-          echo "===== BakaSU COMMIT ====="
-          git rev-parse HEAD
-
-          echo "===== SELINUX_HIDE.C 215-250 ====="
-          nl -ba kernel/feature/selinux_hide.c | sed -n '215,250p'
-
-          echo "===== SELINUX_HIDE.C 300-325 ====="
-          nl -ba kernel/feature/selinux_hide.c | sed -n '300,325p'
-
-          echo "===== SELINUX_HIDE.C 430-455 ====="
-          nl -ba kernel/feature/selinux_hide.c | sed -n '430,455p'
-
-          echo "===== PATCH FILE ====="
-          sed -n '1,80p' "${GITHUB_WORKSPACE}/.github/patches/bakasu-adbroot-context-experimental.patch"
-
-          exit 1
+          set -e
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/patch_bakasu_adbroot_context.py"
+          git diff --check
+          git diff -- kernel/feature/selinux_hide.c
 
 
       - name: SUSFS
